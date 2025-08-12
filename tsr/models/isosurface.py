@@ -3,7 +3,7 @@ from typing import Callable, Optional, Tuple
 import numpy as np
 import torch
 import torch.nn as nn
-from torchmcubes import marching_cubes
+from skimage import measure  # <-- replaces mcubes
 
 
 class IsosurfaceHelper(nn.Module):
@@ -12,6 +12,17 @@ class IsosurfaceHelper(nn.Module):
     @property
     def grid_vertices(self) -> torch.FloatTensor:
         raise NotImplementedError
+
+
+def marching_cubes(volume: torch.Tensor, threshold: float):
+    """Wrapper around skimage.measure.marching_cubes that works like mcubes."""
+    volume_np = volume.cpu().numpy()
+    verts, faces, normals, _ = measure.marching_cubes(volume_np, level=threshold)
+
+    # FIX: Make a copy to avoid negative stride issue
+    verts_torch = torch.from_numpy(verts.copy()).float()
+    faces_torch = torch.from_numpy(faces.copy().astype(np.int64))
+    return verts_torch, faces_torch
 
 
 class MarchingCubeHelper(IsosurfaceHelper):
@@ -42,11 +53,9 @@ class MarchingCubeHelper(IsosurfaceHelper):
         level: torch.FloatTensor,
     ) -> Tuple[torch.FloatTensor, torch.LongTensor]:
         level = -level.view(self.resolution, self.resolution, self.resolution)
-        try:
-            v_pos, t_pos_idx = self.mc_func(level.detach(), 0.0)
-        except AttributeError:
-            print("torchmcubes was not compiled with CUDA support, use CPU version instead.")
-            v_pos, t_pos_idx = self.mc_func(level.detach().cpu(), 0.0)
+        v_pos, t_pos_idx = self.mc_func(level.detach(), 0.0)
+
+        # match coordinate order from original mcubes output
         v_pos = v_pos[..., [2, 1, 0]]
         v_pos = v_pos / (self.resolution - 1.0)
         return v_pos.to(level.device), t_pos_idx.to(level.device)

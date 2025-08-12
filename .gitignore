@@ -162,3 +162,7 @@ cython_debug/
 # default output directory
 output/
 outputs/
+
+# --- Force include TripoSR folder and its contents ---
+!TripoSR/
+!TripoSR/**
